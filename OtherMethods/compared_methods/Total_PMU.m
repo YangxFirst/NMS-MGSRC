@@ -1,0 +1,108 @@
+function [Xun_Means4,Xun_Stds4] = Total_PMU(dataset)
+
+dataset_name = dataset;
+load(dataset);
+addpath('PMU');
+addpath('basic classifier');
+addpath('Evaluation');
+
+% index=find(train_target==-1);
+% train_target(index)=0;
+labeled_rate = 0.7; % 0.7, 0.5, 0.2
+modelparameter.round              = 5;
+
+%% Importing Data
+if exist('train_data','var')==1
+    data=[train_data;test_data];
+    target=[train_target;test_target];
+    clear train_data test_data train_target test_taget
+end
+if exist('dataset','var')==1
+    data = dataset;
+    target = labels;
+    clear dataset labels
+end
+
+data     = double(data);
+% 归一化
+%minMaxd = mapminmax(data');
+%data = minMaxd';
+target = double(target>0);
+num_data = size(data,1);
+
+num_test = ceil(num_data*0.3);
+num_train = num_data - num_test;
+num_label = ceil(num_train*labeled_rate);
+Result_NEW  = zeros(6,50);
+Avg_Means4 = zeros(6,1);
+Avg_Stds4 = zeros(6,1);
+Xun_Means4 = zeros( 6,1);
+Xun_Stds4 = zeros( 6,1);
+m = 1;
+k = 1;
+n = 1;
+
+while (m <= modelparameter.round)
+    randorder = randperm(num_data);
+    train_index = randorder(1:num_train);
+    test_index = randorder(num_train + 1:num_data);
+    randorder = train_index(randperm(num_train));
+    label_index = randorder(1:num_label);
+    unlabel_index = randorder((num_label+1):num_train);
+    
+    label_data = data(label_index,:); % 有标记训练样本
+    label_target = target(:,label_index); % 有标记训练样本的标签
+    unlabel_data = data(unlabel_index,:); % 无标记训练样本
+    test_data = data(test_index,:); % 测试样本
+    test_target = target(:,test_index); % 测试样本的标签
+    
+    datas = label_data;
+    answer = label_target';
+    [~,~] = size(datas);
+    numK = 50;
+    
+    feat = pmu( datas, answer, numK );
+    feature_idx = feat;
+                    
+    % [dumb, feature_idx] = sort(sum(S1.*S1,2),'descend');
+    
+    %% Begin MLKNN
+    MLKNN_train_data = label_data;
+    MLKNN_test_data = test_data;
+    MLKNN_train_label = label_target;
+    MLKNN_test_label = test_target;
+    MLKNN_train_label(MLKNN_train_label == 0) = -1;
+    MLKNN_test_label(MLKNN_test_label == 0) = -1;
+    % load(dataset)
+    Num=10;
+    Smooth=1;
+    [~,num_feature]=size(MLKNN_train_data);
+    for i = 1:50
+    fprintf('Running the program with the selected features - %d/%d \n',i,num_feature);
+        f=feature_idx(1:i);
+        [Prior,PriorN,Cond,CondN]=MLKNN_train(MLKNN_train_data(:,f),MLKNN_train_label,Num,Smooth); % Invoking the training procedure
+        [Outputs,Pre_Labels]=MLKNN_test(MLKNN_train_data(:,f),MLKNN_train_label,MLKNN_test_data(:,f),MLKNN_test_label,Num,Prior,PriorN,Cond,CondN);
+        %% Evaluation of NEW
+    Result_NEW(:,i) = EvaluationAll(Pre_Labels,Outputs,MLKNN_test_label);%参数均为转置
+    end
+    Avg_Means4(1:6,k) = mean(Result_NEW,2);%平均值 2代表行
+    Avg_Stds4(1:6,k) = std(Result_NEW,1,2);%标准差
+    
+    X_Means4(:,k) = Avg_Means4(1:6,k);
+    X_Stds4(:,k)  = Avg_Stds4(1:6,k);
+    k = k + 1;
+    m = m + 1;
+end
+
+Xun_Means4(1:6,n) = mean(X_Means4,2);
+Xun_Stds4(1:6,n)  = std(X_Stds4,1,2);
+
+Xun_Means4 = Xun_Means4';
+Xun_Stds4 = Xun_Stds4';
+
+rmpath('PMU');
+rmpath('basic classifier');
+rmpath('Evaluation');
+
+
+end
